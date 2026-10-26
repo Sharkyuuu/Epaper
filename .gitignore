@@ -1,0 +1,9 @@
+/build/
+/build-*/
+/managed_components/
+/.vscode/settings.json
+/sdkconfig.old
+/main/private_config.h
+*.local
+secrets.*
+.env
