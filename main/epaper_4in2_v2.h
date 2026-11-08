@@ -9,20 +9,25 @@
 #define EPD_BUFFER_SIZE (EPD_WIDTH * EPD_HEIGHT / 8)
 
 //-------------------------------------------------------------------------------------------------------------------
-// @brief      Initialize the Waveshare 4.2-inch V2 e-paper module.
-// @return     ESP_OK on success, otherwise an ESP-IDF error code.
+// @brief      微雪 4.2 英寸 V2 墨水屏初始化
+// @param      void
+// @return     ESP_OK：初始化成功；其他值：初始化失败
+// Sample usage:           epaper_init();
 //-------------------------------------------------------------------------------------------------------------------
 esp_err_t epaper_init(void);
 
 //-------------------------------------------------------------------------------------------------------------------
-// @brief      Transfer a complete monochrome frame and refresh the display.
-// @param      framebuffer    15000-byte buffer, one bit per pixel.
-// @return     ESP_OK on success, otherwise an ESP-IDF error code.
+// @brief      发送一帧黑白图像并整屏刷新
+// @param      framebuffer    15000 字节帧缓冲区，每个像素占 1 位
+// @return     ESP_OK：刷新成功；其他值：刷新失败
+// Sample usage:           epaper_display(framebuffer);
 //-------------------------------------------------------------------------------------------------------------------
 esp_err_t epaper_display(const uint8_t *framebuffer);
 
 //-------------------------------------------------------------------------------------------------------------------
-// @brief      Put the e-paper controller into deep sleep.
-// @return     ESP_OK on success, otherwise an ESP-IDF error code.
+// @brief      墨水屏进入深度休眠
+// @param      void
+// @return     ESP_OK：休眠成功；其他值：休眠失败
+// Sample usage:           epaper_sleep();
 //-------------------------------------------------------------------------------------------------------------------
 esp_err_t epaper_sleep(void);
