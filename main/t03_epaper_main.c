@@ -1,28 +1,30 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "epaper_4in2_v2.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "headfile.h"
 
-static const char *TAG = "t03_screen";
+static const char *TAG = "t03_test";
 
-#define CHECK_EPAPER(operation, framebuffer)                                      \
-    do {                                                                          \
-        const esp_err_t result = (operation);                                      \
-        if (result != ESP_OK) {                                                    \
-            ESP_LOGE(TAG, "%s failed: %s; test stopped without rebooting",       \
-                     #operation, esp_err_to_name(result));                         \
-            free(framebuffer);                                                     \
-            return;                                                               \
-        }                                                                          \
-    } while (0)
+#define RUN_SCREEN_TEST_ON_BOOT 0
+
+#define CHECK_EPAPER(operation, framebuffer)                                   \
+  do {                                                                         \
+    const esp_err_t result = (operation);                                      \
+    if (result != ESP_OK) {                                                    \
+      ESP_LOGE(TAG, "%s failed: %s; test stopped without rebooting",           \
+               #operation, esp_err_to_name(result));                           \
+      free(framebuffer);                                                       \
+      return;                                                                  \
+    }                                                                          \
+  } while (0)
 
 typedef struct {
-    char character;
-    uint8_t columns[5];
+  char character;
+  uint8_t columns[5];
 } glyph_t;
 
 static const glyph_t FONT[] = {
@@ -34,79 +36,93 @@ static const glyph_t FONT[] = {
     {'R', {0x7F, 0x09, 0x19, 0x29, 0x46}},
 };
 
-static void set_black_pixel(uint8_t *framebuffer, int x, int y)
-{
-    if (x < 0 || x >= EPD_WIDTH || y < 0 || y >= EPD_HEIGHT) {
-        return;
+static void set_black_pixel(uint8_t *framebuffer, int x, int y) {
+  if (x < 0 || x >= EPD_WIDTH || y < 0 || y >= EPD_HEIGHT) {
+    return;
+  }
+  framebuffer[y * (EPD_WIDTH / 8) + x / 8] &= (uint8_t)~(0x80U >> (x % 8));
+}
+
+static void fill_rectangle(uint8_t *framebuffer, int x, int y, int width,
+                           int height) {
+  for (int py = y; py < y + height; py++) {
+    for (int px = x; px < x + width; px++) {
+      set_black_pixel(framebuffer, px, py);
     }
-    framebuffer[y * (EPD_WIDTH / 8) + x / 8] &= (uint8_t)~(0x80U >> (x % 8));
+  }
 }
 
-static void fill_rectangle(uint8_t *framebuffer, int x, int y, int width, int height)
-{
-    for (int py = y; py < y + height; py++) {
-        for (int px = x; px < x + width; px++) {
-            set_black_pixel(framebuffer, px, py);
-        }
+static const uint8_t *find_glyph(char character) {
+  for (size_t i = 0; i < sizeof(FONT) / sizeof(FONT[0]); i++) {
+    if (FONT[i].character == character) {
+      return FONT[i].columns;
     }
+  }
+  return NULL;
 }
 
-static const uint8_t *find_glyph(char character)
-{
-    for (size_t i = 0; i < sizeof(FONT) / sizeof(FONT[0]); i++) {
-        if (FONT[i].character == character) {
-            return FONT[i].columns;
-        }
+static void draw_text(uint8_t *framebuffer, int x, int y, const char *text,
+                      int scale) {
+  for (const char *current = text; *current != '\0'; current++) {
+    if (*current == ' ') {
+      x += 4 * scale;
+      continue;
     }
-    return NULL;
-}
 
-static void draw_text(uint8_t *framebuffer, int x, int y, const char *text, int scale)
-{
-    for (const char *current = text; *current != '\0'; current++) {
-        if (*current == ' ') {
-            x += 4 * scale;
-            continue;
-        }
-
-        const uint8_t *glyph = find_glyph(*current);
-        if (glyph == NULL) {
-            x += 6 * scale;
-            continue;
-        }
-
-        for (int column = 0; column < 5; column++) {
-            for (int row = 0; row < 7; row++) {
-                if ((glyph[column] & (1U << row)) != 0) {
-                    fill_rectangle(framebuffer,
-                                   x + column * scale,
-                                   y + row * scale,
-                                   scale,
-                                   scale);
-                }
-            }
-        }
-        x += 6 * scale;
+    const uint8_t *glyph = find_glyph(*current);
+    if (glyph == NULL) {
+      x += 6 * scale;
+      continue;
     }
+
+    for (int column = 0; column < 5; column++) {
+      for (int row = 0; row < 7; row++) {
+        if ((glyph[column] & (1U << row)) != 0) {
+          fill_rectangle(framebuffer, x + column * scale, y + row * scale,
+                         scale, scale);
+        }
+      }
+    }
+    x += 6 * scale;
+  }
 }
 
-static void draw_test_pattern(uint8_t *framebuffer)
-{
-    memset(framebuffer, 0xFF, EPD_BUFFER_SIZE);
+static void draw_test_pattern(uint8_t *framebuffer) {
+  memset(framebuffer, 0xFF, EPD_BUFFER_SIZE);
 
-    fill_rectangle(framebuffer, 8, 8, EPD_WIDTH - 16, 4);
-    fill_rectangle(framebuffer, 8, EPD_HEIGHT - 12, EPD_WIDTH - 16, 4);
-    fill_rectangle(framebuffer, 8, 8, 4, EPD_HEIGHT - 16);
-    fill_rectangle(framebuffer, EPD_WIDTH - 12, 8, 4, EPD_HEIGHT - 16);
-    draw_text(framebuffer, 92, 118, "EPAPER OK", 5);
+  fill_rectangle(framebuffer, 8, 8, EPD_WIDTH - 16, 4);
+  fill_rectangle(framebuffer, 8, EPD_HEIGHT - 12, EPD_WIDTH - 16, 4);
+  fill_rectangle(framebuffer, 8, 8, 4, EPD_HEIGHT - 16);
+  fill_rectangle(framebuffer, EPD_WIDTH - 12, 8, 4, EPD_HEIGHT - 16);
+  draw_text(framebuffer, 92, 118, "EPAPER OK", 5);
 }
 
-void app_main(void)
-{
+static void log_button_event(const button_event_t *event, void *context) {
+  (void)context;
+  ESP_LOGI(TAG, "button=%s gpio=%d event=%s duration=%u ms count=%u",
+           event->button_name, event->gpio, button_event_type_name(event->type),
+           (unsigned)event->duration_ms, (unsigned)event->count);
+}
+
+static void run_button_test(void) {
+  ESP_LOGI(TAG,
+           "button test ready: UP=GPIO13 DOWN=GPIO14 OK=GPIO15 RECORD=GPIO16");
+  ESP_LOGI(
+      TAG,
+      "press briefly for SHORT; hold 0.8 s for LONG and 0.25 s REPEAT events");
+
+  while (true) {
+    buttons_poll();
+    vTaskDelay(pdMS_TO_TICKS(BUTTONS_POLL_INTERVAL_MS));
+  }
+}
+
+void app_main(void) {
+  if (RUN_SCREEN_TEST_ON_BOOT) {
     uint8_t *framebuffer = heap_caps_malloc(EPD_BUFFER_SIZE, MALLOC_CAP_DMA);
     if (framebuffer == NULL) {
-        ESP_LOGE(TAG, "failed to allocate %d-byte framebuffer", EPD_BUFFER_SIZE);
-        return;
+      ESP_LOGE(TAG, "failed to allocate %d-byte framebuffer", EPD_BUFFER_SIZE);
+      return;
     }
 
     ESP_LOGI(TAG, "T03 screen test starting");
@@ -129,4 +145,15 @@ void app_main(void)
 
     free(framebuffer);
     ESP_LOGI(TAG, "T03 screen test PASS; EPAPER OK should remain visible");
+  } else {
+    ESP_LOGI(TAG, "screen test skipped; starting button-only test");
+  }
+
+  const esp_err_t button_result = buttons_init(log_button_event, NULL);
+  if (button_result != ESP_OK) {
+    ESP_LOGE(TAG, "button GPIO setup failed: %s",
+             esp_err_to_name(button_result));
+    return;
+  }
+  run_button_test();
 }
